@@ -4,7 +4,6 @@ import type { Coupon, Transaction } from '@/data/mock-recharge';
 import {
   MOCK_COUPONS,
   MOCK_PAYMENT_METHODS,
-  PLAN_BASE_PRICE,
   buildBillingLines,
   createTransaction,
   getTotalFromLines,
@@ -72,11 +71,11 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
   const [routerSettings, setRouterSettings] = useState(MOCK_ROUTER);
   const [wifiPassword, setWifiPassword] = useState('extranet@2026');
 
-  const { isSynced, refreshData } = useCustomer();
+  const { isSynced, plan, refreshData } = useCustomer();
 
   const billingLines = useMemo(
-    () => buildBillingLines(PLAN_BASE_PRICE, appliedCoupon),
-    [appliedCoupon],
+    () => buildBillingLines(plan.price, appliedCoupon, plan.name),
+    [appliedCoupon, plan.name, plan.price],
   );
   const totalPayable = useMemo(() => getTotalFromLines(billingLines), [billingLines]);
 
@@ -97,7 +96,7 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
     await new Promise((r) => setTimeout(r, 2200));
     const method = MOCK_PAYMENT_METHODS.find((m) => m.id === selectedPaymentId);
     const fail = selectedPaymentId === 'fail-demo';
-    const txn = createTransaction(totalPayable, method?.label ?? 'UPI', fail ? 'failed' : 'success');
+    const txn = createTransaction(totalPayable, method?.label ?? 'UPI', fail ? 'failed' : 'success', plan.name);
     setLastTransaction(txn);
 
     if (!fail && isSynced) {
@@ -106,7 +105,7 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
         await postToApi(`/customers/${serverCustomerId}/recharge`, {
           amount: totalPayable,
           method: method?.label ?? 'UPI',
-          billingCycle: 'monthly',
+          billingCycle: plan.billingCycle,
         });
         
         // Refresh customer context to pull updated dates/status from next.js server immediately
@@ -118,7 +117,7 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
     }
 
     return { success: !fail, transaction: txn };
-  }, [selectedPaymentId, totalPayable, isSynced, refreshData]);
+  }, [selectedPaymentId, totalPayable, isSynced, refreshData, plan.billingCycle, plan.name]);
 
   const resetRecharge = useCallback(() => {
     setCouponCode('');
@@ -184,7 +183,7 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
 
   const value = useMemo(
     () => ({
-      basePrice: PLAN_BASE_PRICE,
+      basePrice: plan.price,
       couponCode,
       appliedCoupon,
       selectedPaymentId,
@@ -234,6 +233,7 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
       routerSettings,
       wifiPassword,
       toggleParentalControl,
+      plan.price,
     ],
   );
 

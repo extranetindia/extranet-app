@@ -17,6 +17,11 @@ import { Brand, ExtranetColors, Radius, Spacing } from '@/constants/extranet-the
 export default function SubscriptionScreen() {
   const { plan } = useCustomer();
   const { subscriptionMeta, autoRenew, toggleAutoRenew } = useAppFeatures();
+  const billingCycle = plan.billingCycle.charAt(0).toUpperCase() + plan.billingCycle.slice(1);
+  const renewalHistory = MOCK_RENEWAL_HISTORY.map((item) => ({
+    ...item,
+    amount: plan.price,
+  }));
 
   return (
     <SafeScreen edges={['top', 'bottom']} tone="light">
@@ -44,8 +49,9 @@ export default function SubscriptionScreen() {
           </View>
           <View style={styles.grid}>
             <Info label="Expiry" value={plan.expiryDate} />
-            <Info label="Billing cycle" value={subscriptionMeta.billingCycle} />
-            <Info label="Next bill" value={subscriptionMeta.nextBillingDate} />
+            <Info label="Plan charge" value={`₹${plan.price}/mo`} />
+            <Info label="Billing cycle" value={billingCycle} />
+            <Info label="Next bill" value={plan.expiryDate} />
             <Info label="Member since" value={subscriptionMeta.memberSince} />
           </View>
         </AppCard>
@@ -82,7 +88,7 @@ export default function SubscriptionScreen() {
         <AppText variant="label" tone="muted" style={styles.historyTitle}>
           RENEWAL HISTORY
         </AppText>
-        {MOCK_RENEWAL_HISTORY.map((item) => (
+        {renewalHistory.map((item) => (
           <AppCard key={item.id} style={styles.historyItem}>
             <View style={styles.historyRow}>
               <View>

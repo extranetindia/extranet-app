@@ -46,26 +46,22 @@ export const MOCK_COUPONS: Coupon[] = [
   { code: 'LOYALTY100', discount: 100, type: 'flat', label: 'Loyalty reward' },
 ];
 
-export const PLAN_BASE_PRICE = 799;
-export const GST_RATE = 0.18;
-
 export function buildBillingLines(
-  basePrice: number,
+  billingAmount: number,
   coupon: Coupon | null,
+  planName = 'current plan',
 ): BillingLine[] {
   let discount = 0;
   if (coupon) {
     discount =
       coupon.type === 'flat'
         ? coupon.discount
-        : Math.round((basePrice * coupon.discount) / 100);
+        : Math.round((billingAmount * coupon.discount) / 100);
   }
-  const subtotal = Math.max(0, basePrice - discount);
-  const gst = Math.round(subtotal * GST_RATE);
-  const total = subtotal + gst;
+  const total = Math.max(0, billingAmount - discount);
 
   const lines: BillingLine[] = [
-    { id: 'plan', label: 'Plan charges (Ultra 300)', amount: basePrice, type: 'charge' },
+    { id: 'plan', label: `Renewal amount (${planName})`, amount: billingAmount, type: 'charge' },
   ];
   if (discount > 0) {
     lines.push({
@@ -75,10 +71,7 @@ export function buildBillingLines(
       type: 'discount',
     });
   }
-  lines.push(
-    { id: 'gst', label: 'GST (18%)', amount: gst, type: 'tax' },
-    { id: 'total', label: 'Amount payable', amount: total, type: 'charge' },
-  );
+  lines.push({ id: 'total', label: 'Amount payable', amount: total, type: 'charge' });
   return lines;
 }
 
@@ -91,13 +84,14 @@ export function createTransaction(
   amount: number,
   paymentMethod: string,
   status: 'success' | 'failed',
+  planName = 'Current plan',
 ): Transaction {
   const now = new Date();
   return {
     id: `TXN${Date.now().toString().slice(-8)}`,
     date: now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
     time: now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-    planName: 'Extranet Ultra 300',
+    planName,
     amount,
     paymentMethod,
     status,
