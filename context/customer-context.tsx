@@ -144,7 +144,6 @@ export function CustomerProvider({ children }: { children: React.ReactNode }) {
 
       const speedMbps = subscription.speed.toLowerCase().includes('gbps') ? 1000 : parseInt(subscription.speed, 10) || 100;
 
-      console.log("LIVE SUBSCRIPTION", subscription);
       const mappedPlan = {
         id: subscription.planCatalogId,
         name: subscription.planName,
