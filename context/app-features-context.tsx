@@ -17,6 +17,8 @@ import {
   MOCK_TICKETS,
   type SupportTicket,
 } from '@/data/mock-support-tickets';
+import { useCustomer } from '@/context/customer-context';
+import { postToApi } from '@/utils/api-client';
 
 type AppFeaturesContextValue = {
   // Recharge
@@ -70,6 +72,8 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
   const [routerSettings, setRouterSettings] = useState(MOCK_ROUTER);
   const [wifiPassword, setWifiPassword] = useState('extranet@2026');
 
+  const { isSynced, refreshData } = useCustomer();
+
   const billingLines = useMemo(
     () => buildBillingLines(PLAN_BASE_PRICE, appliedCoupon),
     [appliedCoupon],
@@ -95,8 +99,26 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
     const fail = selectedPaymentId === 'fail-demo';
     const txn = createTransaction(totalPayable, method?.label ?? 'UPI', fail ? 'failed' : 'success');
     setLastTransaction(txn);
+
+    if (!fail && isSynced) {
+      try {
+        const serverCustomerId = 'cust-rahul'; // Active demo customer in extranet-app
+        await postToApi(`/customers/${serverCustomerId}/recharge`, {
+          amount: totalPayable,
+          method: method?.label ?? 'UPI',
+          billingCycle: 'monthly',
+        });
+        
+        // Refresh customer context to pull updated dates/status from next.js server immediately
+        await refreshData();
+        console.log('[Recharge Sync] Successfully logged transaction on CRM server.');
+      } catch (e) {
+        console.error('[Recharge Sync] Failed to register payment on CRM server', e);
+      }
+    }
+
     return { success: !fail, transaction: txn };
-  }, [selectedPaymentId, totalPayable]);
+  }, [selectedPaymentId, totalPayable, isSynced, refreshData]);
 
   const resetRecharge = useCallback(() => {
     setCouponCode('');
