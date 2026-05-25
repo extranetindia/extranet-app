@@ -9,6 +9,7 @@ import { SafeScreen } from '@/components/ui/safe-screen';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ScreenScroll } from '@/components/ui/screen-scroll';
 import { AppCard } from '@/components/ui/card';
+import { UsageAnalyticsSkeleton } from '@/components/ui/skeleton';
 import { AppText } from '@/components/ui/typography';
 import {
   MOCK_CONNECTED_DEVICES,
@@ -20,7 +21,7 @@ import { useScreenBootstrap } from '@/hooks/use-screen-bootstrap';
 import { Brand, ExtranetColors, Radius, Spacing } from '@/constants/extranet-theme';
 
 export default function UsageScreen() {
-  const { ready, refresh } = useScreenBootstrap(600);
+  const { ready, showLoader, refresh } = useScreenBootstrap(600);
   const [refreshing, setRefreshing] = useState(false);
   const summary = MOCK_USAGE_SUMMARY;
 
@@ -33,9 +34,11 @@ export default function UsageScreen() {
   return (
     <SafeScreen edges={['top', 'bottom']} tone="light">
       <ScreenScroll bottomInset={40} onRefresh={handleRefresh} refreshing={refreshing}>
-        <ScreenHeader title="Usage analytics" subtitle={summary.monthLabel} />
-        {ready && (
+        {showLoader && !ready ? (
+          <UsageAnalyticsSkeleton />
+        ) : (
           <>
+            <ScreenHeader title="Usage analytics" subtitle={summary.monthLabel} />
             <FadeIn index={0}>
               <View style={styles.radialRow}>
                 <AppCard variant="elevated" style={styles.radialCard}>

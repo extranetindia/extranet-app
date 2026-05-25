@@ -7,16 +7,19 @@ import { AppCard } from '@/components/ui/card';
 import { SafeScreen } from '@/components/ui/safe-screen';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ScreenScroll } from '@/components/ui/screen-scroll';
+import { SubscriptionSkeleton } from '@/components/ui/skeleton';
 import { AppText } from '@/components/ui/typography';
 import { useCustomer } from '@/context/customer-context';
 import { useAppFeatures } from '@/context/app-features-context';
 import { MOCK_RENEWAL_HISTORY } from '@/data/mock-subscription';
 import { Routes } from '@/constants/routes';
 import { Brand, ExtranetColors, Radius, Spacing } from '@/constants/extranet-theme';
+import { useDelayedLoader } from '@/hooks/use-delayed-loader';
 
 export default function SubscriptionScreen() {
-  const { plan } = useCustomer();
+  const { plan, isHydrating, hasCachedLiveData } = useCustomer();
   const { subscriptionMeta, autoRenew, toggleAutoRenew } = useAppFeatures();
+  const showSkeleton = useDelayedLoader(isHydrating && !hasCachedLiveData);
   const billingCycle = plan.billingCycle.charAt(0).toUpperCase() + plan.billingCycle.slice(1);
   const renewalHistory = MOCK_RENEWAL_HISTORY.map((item) => ({
     ...item,
@@ -26,6 +29,10 @@ export default function SubscriptionScreen() {
   return (
     <SafeScreen edges={['top', 'bottom']} tone="light">
       <ScreenScroll bottomInset={40}>
+        {showSkeleton ? (
+          <SubscriptionSkeleton />
+        ) : (
+          <>
         <ScreenHeader title="Subscription" subtitle="Plan & billing" />
         <AppCard variant="elevated" style={styles.planCard}>
           <View style={styles.planTop}>
@@ -106,6 +113,8 @@ export default function SubscriptionScreen() {
             </View>
           </AppCard>
         ))}
+          </>
+        )}
       </ScreenScroll>
     </SafeScreen>
   );

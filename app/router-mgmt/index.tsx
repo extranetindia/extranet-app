@@ -6,15 +6,19 @@ import { AppCard } from '@/components/ui/card';
 import { SafeScreen } from '@/components/ui/safe-screen';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ScreenScroll } from '@/components/ui/screen-scroll';
+import { RouterSkeleton } from '@/components/ui/skeleton';
 import { AppText } from '@/components/ui/typography';
 import { useCustomer } from '@/context/customer-context';
 import { useAppFeatures } from '@/context/app-features-context';
 import { Routes } from '@/constants/routes';
 import { Brand, ExtranetColors, Radius, Shadows, Spacing } from '@/constants/extranet-theme';
+import { useScreenBootstrap } from '@/hooks/use-screen-bootstrap';
 
 export default function RouterManagementScreen() {
   const { restartRouter, routerRestarting } = useCustomer();
   const { routerSettings, toggleParentalControl } = useAppFeatures();
+  const { ready, showLoader } = useScreenBootstrap(360);
+  const showSkeleton = showLoader && !ready && !routerSettings.model;
 
   const handleRestart = () => {
     Alert.alert('Restart router?', 'Connection will pause for ~30 seconds.', [
@@ -26,6 +30,10 @@ export default function RouterManagementScreen() {
   return (
     <SafeScreen edges={['top', 'bottom']} tone="light">
       <ScreenScroll>
+        {showSkeleton ? (
+          <RouterSkeleton />
+        ) : (
+          <>
         <ScreenHeader title="Router" subtitle={routerSettings.model} />
         <AppCard variant="elevated" style={styles.statusCard}>
           <View style={styles.statusRow}>
@@ -81,6 +89,8 @@ export default function RouterManagementScreen() {
             />
           </View>
         </AppCard>
+          </>
+        )}
       </ScreenScroll>
     </SafeScreen>
   );

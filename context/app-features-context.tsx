@@ -28,6 +28,9 @@ type AppFeaturesContextValue = {
   billingLines: ReturnType<typeof buildBillingLines>;
   totalPayable: number;
   lastTransaction: Transaction | null;
+  serverAvailable: boolean;
+  offlineMode: boolean;
+  syncError: string | null;
   setCouponCode: (code: string) => void;
   applyCoupon: () => { success: boolean; message: string };
   clearCoupon: () => void;
@@ -71,7 +74,7 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
   const [routerSettings, setRouterSettings] = useState(MOCK_ROUTER);
   const [wifiPassword, setWifiPassword] = useState('extranet@2026');
 
-  const { isSynced, plan, refreshData } = useCustomer();
+  const { isSynced, plan, refreshData, serverAvailable, offlineMode, syncError } = useCustomer();
 
   const billingLines = useMemo(
     () => buildBillingLines(plan.price, appliedCoupon, plan.name),
@@ -96,10 +99,17 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
     await new Promise((r) => setTimeout(r, 2200));
     const method = MOCK_PAYMENT_METHODS.find((m) => m.id === selectedPaymentId);
     const fail = selectedPaymentId === 'fail-demo';
+    if (offlineMode) {
+      const txn = createTransaction(totalPayable, method?.label ?? 'UPI', 'failed', plan.name);
+      setLastTransaction(txn);
+      console.warn('[Recharge Sync] Payment skipped because the CRM server is unavailable.');
+      return { success: false, transaction: txn };
+    }
+
     const txn = createTransaction(totalPayable, method?.label ?? 'UPI', fail ? 'failed' : 'success', plan.name);
     setLastTransaction(txn);
 
-    if (!fail && isSynced) {
+    if (!fail && isSynced && serverAvailable) {
       try {
         const serverCustomerId = 'cust-rahul'; // Active demo customer in extranet-app
         await postToApi(`/customers/${serverCustomerId}/recharge`, {
@@ -113,11 +123,12 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
         console.log('[Recharge Sync] Successfully logged transaction on CRM server.');
       } catch (e) {
         console.error('[Recharge Sync] Failed to register payment on CRM server', e);
+        await refreshData();
       }
     }
 
     return { success: !fail, transaction: txn };
-  }, [selectedPaymentId, totalPayable, isSynced, refreshData, plan.billingCycle, plan.name]);
+  }, [selectedPaymentId, totalPayable, offlineMode, plan.name, isSynced, serverAvailable, plan.billingCycle, refreshData]);
 
   const resetRecharge = useCallback(() => {
     setCouponCode('');
@@ -190,6 +201,9 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
       billingLines,
       totalPayable,
       lastTransaction,
+      serverAvailable,
+      offlineMode,
+      syncError,
       setCouponCode,
       applyCoupon,
       clearCoupon,
@@ -218,6 +232,9 @@ export function AppFeaturesProvider({ children }: { children: React.ReactNode })
       billingLines,
       totalPayable,
       lastTransaction,
+      serverAvailable,
+      offlineMode,
+      syncError,
       applyCoupon,
       clearCoupon,
       processPayment,

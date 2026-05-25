@@ -17,9 +17,10 @@ import { useCustomer } from '@/context/customer-context';
 import { useScreenBootstrap } from '@/hooks/use-screen-bootstrap';
 
 export default function HomeScreen() {
-  const { ready, refresh } = useScreenBootstrap(720);
-  const { runSpeedTest, speedTesting } = useCustomer();
+  const { ready, showLoader, refresh } = useScreenBootstrap(720);
+  const { runSpeedTest, speedTesting, isHydrating, isRefreshing, hasCachedLiveData } = useCustomer();
   const [refreshing, setRefreshing] = useState(false);
+  const showDashboardSkeleton = (showLoader || isHydrating) && !hasCachedLiveData;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -29,7 +30,7 @@ export default function HomeScreen() {
 
   return (
     <SafeScreen edges={['top']} tone="light">
-      {!ready ? (
+      {showDashboardSkeleton ? (
         <ScreenScroll bottomInset={100}>
           <DashboardSkeleton />
         </ScreenScroll>
@@ -37,7 +38,7 @@ export default function HomeScreen() {
         <ScreenScroll
           bottomInset={100}
           onRefresh={handleRefresh}
-          refreshing={refreshing || speedTesting}>
+          refreshing={refreshing || speedTesting || isRefreshing}>
           <FadeIn index={0}>
             <DashboardHeader />
           </FadeIn>

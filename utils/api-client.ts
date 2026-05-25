@@ -1,6 +1,13 @@
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
+export type ApiAvailability = {
+  available: boolean;
+  checkedAt: string;
+  status?: number;
+  error?: string;
+};
+
 // Determine the base API URL dynamically depending on platform and environment
 const getApiBaseUrl = (): string => {
   // If running in development, resolve host machine IP from Expo Constants
@@ -26,7 +33,7 @@ export const API_BASE_URL = getApiBaseUrl();
 /**
  * Perform a fast check to see if the local Next.js API server is running and reachable.
  */
-export async function checkServerHealth(timeoutMs = 1200): Promise<boolean> {
+export async function getServerAvailability(timeoutMs = 1200): Promise<ApiAvailability> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -37,12 +44,27 @@ export async function checkServerHealth(timeoutMs = 1200): Promise<boolean> {
       headers: { 'Cache-Control': 'no-cache' },
     });
     clearTimeout(timeoutId);
-    return res.status === 200;
+    return {
+      available: res.ok,
+      checkedAt: new Date().toISOString(),
+      status: res.status,
+      error: res.ok ? undefined : `Health check failed with status: ${res.status}`,
+    };
   } catch (e) {
     clearTimeout(timeoutId);
-    console.log(`[API Client] H8 Server unreachable at ${API_BASE_URL}. Falling back to mock data mode.`);
-    return false;
+    const error = e instanceof Error ? e.message : 'Unknown network error';
+    console.log(`[API Client] H8 Server unreachable at ${API_BASE_URL}.`);
+    return {
+      available: false,
+      checkedAt: new Date().toISOString(),
+      error,
+    };
   }
+}
+
+export async function checkServerHealth(timeoutMs = 1200): Promise<boolean> {
+  const availability = await getServerAvailability(timeoutMs);
+  return availability.available;
 }
 
 /**
@@ -56,6 +78,10 @@ export async function getFromApi<T>(endpoint: string, timeoutMs = 2500): Promise
   const response = await fetch(`${API_BASE_URL}${cleanEndpoint}`, {
     method: 'GET',
     signal: controller.signal,
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
   });
 
   clearTimeout(timeoutId);

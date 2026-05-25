@@ -5,9 +5,11 @@ import { AppCard } from '@/components/ui/card';
 import { SafeScreen } from '@/components/ui/safe-screen';
 import { ScreenHeader } from '@/components/ui/screen-header';
 import { ScreenScroll } from '@/components/ui/screen-scroll';
+import { ListSkeleton } from '@/components/ui/skeleton';
 import { AppText } from '@/components/ui/typography';
-import { useAppFeatures } from '@/context/app-features-context';
 import { Brand, ExtranetColors, Radius, Spacing } from '@/constants/extranet-theme';
+import { useAppFeatures } from '@/context/app-features-context';
+import { useScreenBootstrap } from '@/hooks/use-screen-bootstrap';
 
 const SIGNAL_COLOR = {
   excellent: ExtranetColors.success,
@@ -17,36 +19,44 @@ const SIGNAL_COLOR = {
 
 export default function RouterDevicesScreen() {
   const { routerDevices } = useAppFeatures();
+  const { ready, showLoader } = useScreenBootstrap(360);
+  const showSkeleton = showLoader && !ready && routerDevices.length === 0;
 
   return (
     <SafeScreen edges={['top', 'bottom']} tone="light">
       <ScreenScroll>
-        <ScreenHeader title="Connected devices" subtitle="Live on your network" />
-        {routerDevices.map((device) => (
-          <AppCard key={device.id} style={styles.card}>
-            <View style={styles.row}>
-              <View style={styles.icon}>
-                <Ionicons name="wifi" size={20} color={Brand.primary} />
-              </View>
-              <View style={styles.info}>
-                <AppText variant="bodyMedium" tone="default">
-                  {device.name}
-                </AppText>
-                <AppText variant="caption" tone="muted">
-                  {device.mac} · {device.band}
-                </AppText>
-              </View>
-              <View style={styles.right}>
-                <AppText variant="caption" color={SIGNAL_COLOR[device.signal]}>
-                  {device.signal}
-                </AppText>
-                <AppText variant="caption" tone="muted">
-                  {device.dataToday}
-                </AppText>
-              </View>
-            </View>
-          </AppCard>
-        ))}
+        {showSkeleton ? (
+          <ListSkeleton rows={5} />
+        ) : (
+          <>
+            <ScreenHeader title="Connected devices" subtitle="Live on your network" />
+            {routerDevices.map((device) => (
+              <AppCard key={device.id} style={styles.card}>
+                <View style={styles.row}>
+                  <View style={styles.icon}>
+                    <Ionicons name="wifi" size={20} color={Brand.primary} />
+                  </View>
+                  <View style={styles.info}>
+                    <AppText variant="bodyMedium" tone="default">
+                      {device.name}
+                    </AppText>
+                    <AppText variant="caption" tone="muted">
+                      {device.mac} - {device.band}
+                    </AppText>
+                  </View>
+                  <View style={styles.right}>
+                    <AppText variant="caption" color={SIGNAL_COLOR[device.signal]}>
+                      {device.signal}
+                    </AppText>
+                    <AppText variant="caption" tone="muted">
+                      {device.dataToday}
+                    </AppText>
+                  </View>
+                </View>
+              </AppCard>
+            ))}
+          </>
+        )}
       </ScreenScroll>
     </SafeScreen>
   );

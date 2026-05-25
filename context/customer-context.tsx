@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   MOCK_ACTIVE_PLAN,
@@ -7,7 +8,19 @@ import {
   type ConnectionStatus,
   type SubscriptionStatus,
 } from '@/data/mock-customer';
-import { checkServerHealth, getFromApi } from '@/utils/api-client';
+import { getFromApi, getServerAvailability } from '@/utils/api-client';
+import { mapSubscriptionToCustomerPlan } from '@/utils/plan-mapping';
+
+const CUSTOMER_CACHE_KEY = 'extranet:last-live-customer-state:v1';
+
+type CustomerDataSource = 'mock' | 'cache' | 'live';
+type ServerStatus = 'unknown' | 'available' | 'unavailable';
+
+type CachedCustomerState = {
+  customer: typeof MOCK_CUSTOMER;
+  plan: typeof MOCK_ACTIVE_PLAN;
+  cachedAt: string;
+};
 
 type CustomerContextValue = {
   customer: typeof MOCK_CUSTOMER;
@@ -18,7 +31,17 @@ type CustomerContextValue = {
   notificationsEnabled: boolean;
   routerRestarting: boolean;
   speedTesting: boolean;
+  isHydrating: boolean;
+  isRefreshing: boolean;
   isSynced: boolean;
+  serverAvailable: boolean;
+  offlineMode: boolean;
+  serverStatus: ServerStatus;
+  syncError: string | null;
+  dataSource: CustomerDataSource;
+  lastSyncedAt: string | null;
+  lastServerCheckAt: string | null;
+  hasCachedLiveData: boolean;
   toggleNotifications: () => void;
   restartRouter: () => Promise<void>;
   runSpeedTest: () => Promise<void>;
@@ -43,25 +66,6 @@ function parseAddress(flatAddress: string) {
     city: parts[parts.length - 2] || 'Bengaluru',
     pincode,
   };
-}
-
-// Helper to map OTT based on plan speed
-function resolveOtt(speedMbps: number) {
-  if (speedMbps >= 300) {
-    return [
-      { id: 'netflix', label: 'Netflix', icon: 'film' },
-      { id: 'prime', label: 'Prime', icon: 'play-circle' },
-      { id: 'hotstar', label: 'Hotstar', icon: 'star' },
-      { id: 'sonyliv', label: 'SonyLIV', icon: 'tv' },
-    ];
-  } else if (speedMbps >= 100) {
-    return [
-      { id: 'netflix', label: 'Netflix', icon: 'film' },
-      { id: 'prime', label: 'Prime', icon: 'play-circle' },
-      { id: 'hotstar', label: 'Hotstar', icon: 'star' },
-    ];
-  }
-  return [{ id: 'hotstar', label: 'Hotstar', icon: 'star' }];
 }
 
 // Helper to calculate days remaining until expiry
@@ -98,20 +102,99 @@ export function CustomerProvider({ children }: { children: React.ReactNode }) {
   const [speed, setSpeed] = useState(MOCK_SPEED);
   const [routerRestarting, setRouterRestarting] = useState(false);
   const [speedTesting, setSpeedTesting] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSynced, setIsSynced] = useState(false);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('unknown');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [dataSource, setDataSource] = useState<CustomerDataSource>('mock');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [lastServerCheckAt, setLastServerCheckAt] = useState<string | null>(null);
+  const [hasCachedLiveData, setHasCachedLiveData] = useState(false);
+  const cachedStateRef = useRef<CachedCustomerState | null>(null);
+
+  const applyCachedState = useCallback((cachedState: CachedCustomerState) => {
+    cachedStateRef.current = cachedState;
+    setCustomer(cachedState.customer);
+    setPlan({
+      ...cachedState.plan,
+      daysRemaining: calculateDaysRemaining(cachedState.plan.expiryDate),
+    });
+    setHasCachedLiveData(true);
+    setDataSource('cache');
+    setLastSyncedAt(cachedState.cachedAt);
+    setIsSynced(false);
+  }, []);
+
+  const loadCachedState = useCallback(async () => {
+    try {
+      const raw = await AsyncStorage.getItem(CUSTOMER_CACHE_KEY);
+      if (!raw) return null;
+
+      const cachedState = JSON.parse(raw) as CachedCustomerState;
+      if (!cachedState.customer || !cachedState.plan || !cachedState.cachedAt) {
+        return null;
+      }
+
+      applyCachedState(cachedState);
+      return cachedState;
+    } catch (e) {
+      console.warn('[Customer Context] Failed to load cached live state.', e);
+      return null;
+    }
+  }, [applyCachedState]);
+
+  const persistLiveState = useCallback(async (
+    nextCustomer: typeof MOCK_CUSTOMER,
+    nextPlan: typeof MOCK_ACTIVE_PLAN,
+    syncedAt: string,
+  ) => {
+    const cachedState: CachedCustomerState = {
+      customer: nextCustomer,
+      plan: nextPlan,
+      cachedAt: syncedAt,
+    };
+
+    cachedStateRef.current = cachedState;
+    setHasCachedLiveData(true);
+
+    try {
+      await AsyncStorage.setItem(CUSTOMER_CACHE_KEY, JSON.stringify(cachedState));
+    } catch (e) {
+      console.warn('[Customer Context] Failed to persist live customer state.', e);
+    }
+  }, []);
+
+  const enterOfflineMode = useCallback((message: string) => {
+    setServerStatus('unavailable');
+    setSyncError(message);
+    setIsSynced(false);
+
+    if (cachedStateRef.current) {
+      applyCachedState(cachedStateRef.current);
+      console.warn(`[Customer Context] ${message}. Using cached live customer state.`);
+      return;
+    }
+
+    console.warn(`[Customer Context] ${message}. No cached live state yet; keeping bootstrap mock state.`);
+  }, [applyCachedState]);
 
   const refreshData = useCallback(async () => {
+    setIsRefreshing(true);
     try {
-      const serverActive = await checkServerHealth();
-      if (!serverActive) {
-        setIsSynced(false);
+      const availability = await getServerAvailability();
+      setLastServerCheckAt(availability.checkedAt);
+      setServerStatus(availability.available ? 'available' : 'unavailable');
+
+      if (!availability.available) {
+        enterOfflineMode(availability.error ?? 'Server unavailable');
         return;
       }
 
       // 1. Fetch customer details matching the default demo phone number: 9876543210
       const customerData = await getFromApi<any>('/customers?phone=9876543210');
       if (!customerData || !customerData.customerId) {
-        setIsSynced(false);
+        enterOfflineMode('Customer lookup failed');
         return;
       }
 
@@ -124,7 +207,7 @@ export function CustomerProvider({ children }: { children: React.ReactNode }) {
       ]);
 
       // 3. Perform premium mappings
-      const nameParts = profile.name.split(' ');
+      const nameParts = (profile.name || '').split(' ');
       const firstName = nameParts[0] || 'Rahul';
       const lastName = nameParts.slice(1).join(' ') || 'Sharma';
       const initials = `${firstName[0] || 'R'}${lastName[0] || 'S'}`.toUpperCase();
@@ -142,34 +225,50 @@ export function CustomerProvider({ children }: { children: React.ReactNode }) {
         notificationsEnabled: true, // Default true
       };
 
-      const speedMbps = subscription.speed.toLowerCase().includes('gbps') ? 1000 : parseInt(subscription.speed, 10) || 100;
-
-      const mappedPlan = {
-        id: subscription.planCatalogId,
-        name: subscription.planName,
-        speed: subscription.speed,
-        speedMbps,
-        price: subscription.billingAmount,
-        billingCycle: subscription.billingCycle as 'monthly' | 'quarterly' | 'annual',
-        expiryDate: subscription.expiryDate,
-        daysRemaining: calculateDaysRemaining(subscription.expiryDate),
-        ott: resolveOtt(speedMbps),
-      };
+      const mappedPlan = mapSubscriptionToCustomerPlan(subscription);
+      mappedPlan.daysRemaining = calculateDaysRemaining(mappedPlan.expiryDate);
+      const syncedAt = new Date().toISOString();
 
       setCustomer(mappedCustomer);
       setPlan(mappedPlan);
       setIsSynced(true);
+      setServerStatus('available');
+      setSyncError(null);
+      setDataSource('live');
+      setLastSyncedAt(syncedAt);
+      await persistLiveState(mappedCustomer, mappedPlan, syncedAt);
       console.log('[Customer Context] Successfully synchronized data from CRM server.');
     } catch (e) {
-      console.warn('[Customer Context] Sync failure. Keeping premium mock mode active.', e);
-      setIsSynced(false);
+      enterOfflineMode('Sync failed');
+      console.warn('[Customer Context] Sync failure details:', e);
+    } finally {
+      setIsRefreshing(false);
     }
-  }, []);
+  }, [enterOfflineMode, persistLiveState]);
 
-  // Fetch on mount
   useEffect(() => {
-    refreshData();
-  }, [refreshData]);
+    let mounted = true;
+
+    async function bootstrapCustomerState() {
+      const cachedState = await loadCachedState();
+      if (!mounted) return;
+
+      if (!cachedState) {
+        setDataSource('mock');
+      }
+
+      await refreshData();
+      if (mounted) {
+        setIsHydrating(false);
+      }
+    }
+
+    bootstrapCustomerState();
+
+    return () => {
+      mounted = false;
+    };
+  }, [loadCachedState, refreshData]);
 
   const toggleNotifications = useCallback(() => {
     setCustomer((prev) => ({
@@ -212,7 +311,17 @@ export function CustomerProvider({ children }: { children: React.ReactNode }) {
       notificationsEnabled: customer.notificationsEnabled,
       routerRestarting,
       speedTesting,
+      isHydrating,
+      isRefreshing,
       isSynced,
+      serverAvailable: serverStatus === 'available',
+      offlineMode: serverStatus === 'unavailable',
+      serverStatus,
+      syncError,
+      dataSource,
+      lastSyncedAt,
+      lastServerCheckAt,
+      hasCachedLiveData,
       toggleNotifications,
       restartRouter,
       runSpeedTest,
@@ -225,7 +334,15 @@ export function CustomerProvider({ children }: { children: React.ReactNode }) {
       speed,
       routerRestarting,
       speedTesting,
+      isHydrating,
+      isRefreshing,
       isSynced,
+      serverStatus,
+      syncError,
+      dataSource,
+      lastSyncedAt,
+      lastServerCheckAt,
+      hasCachedLiveData,
       toggleNotifications,
       restartRouter,
       runSpeedTest,

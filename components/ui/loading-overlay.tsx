@@ -2,15 +2,18 @@ import { ActivityIndicator, Modal, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/ui/typography';
 import { Brand, ExtranetColors, Radius, Shadows, Spacing } from '@/constants/extranet-theme';
+import { useDelayedLoader } from '@/hooks/use-delayed-loader';
 
 type LoadingOverlayProps = {
   visible: boolean;
   message?: string;
 };
 
-export function LoadingOverlay({ visible, message = 'Please wait…' }: LoadingOverlayProps) {
+export function LoadingOverlay({ visible, message = 'Please wait...' }: LoadingOverlayProps) {
+  const showOverlay = useDelayedLoader(visible, { delayMs: 140, minVisibleMs: 320 });
+
   return (
-    <Modal transparent visible={visible} animationType="fade" statusBarTranslucent>
+    <Modal transparent visible={showOverlay} animationType="fade" statusBarTranslucent>
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <ActivityIndicator size="large" color={Brand.primary} />

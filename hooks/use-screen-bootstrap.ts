@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 
-/** Simulates initial data fetch — drives skeleton → content transition */
+import { useDelayedLoader } from '@/hooks/use-delayed-loader';
+
+/** Coordinates screen hydration without flashing loaders for instant data. */
 export function useScreenBootstrap(durationMs = 650) {
   const [ready, setReady] = useState(false);
+  const showLoader = useDelayedLoader(!ready);
 
   useEffect(() => {
     const t = setTimeout(() => setReady(true), durationMs);
@@ -15,5 +18,5 @@ export function useScreenBootstrap(durationMs = 650) {
     setReady(true);
   }, [durationMs]);
 
-  return { ready, refresh };
+  return { ready, showLoader, refresh };
 }
